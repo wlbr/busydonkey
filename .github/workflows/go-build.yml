@@ -1,0 +1,78 @@
+name: GoBuild
+
+on:
+  workflow_dispatch:
+  push:
+    #branches: [ master ]
+  pull_request:
+    #branches: [ master ]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Set output
+        id: vars
+        run: echo ::set-output name=tag::${GITHUB_REF#refs/*/}
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '^1.16'
+      - name: Build
+        run: make build
+      #- name: Test
+      #  run: make test
+      - name: Codesign OSX executable
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+          MACOS_DEVELOPER_ID: ${{ secrets.MACOS_DEVELOPER_ID }}
+        run: |
+          echo $MACOS_CERTIFICATE | base64 --decode > certificate.p12
+          security create-keychain -p build.keychain.pw build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p build.keychain.pw build.keychain
+          security import certificate.p12 -k build.keychain -P $MACOS_CERTIFICATE_PWD -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k build.keychain.pw build.keychain
+          /usr/bin/codesign --force -s $MACOS_DEVELOPER_ID --options runtime ./bin/mac/x64/*
+          /usr/bin/codesign --force -s $MACOS_DEVELOPER_ID --options runtime ./bin/mac/arm/*
+      - name: Notarize OSX executable
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          MACOS_DEVELOPER_EMAIL: ${{ secrets.MACOS_DEVELOPER_EMAIL }}
+          MACOS_DEVELOPER_TEAM: ${{ secrets.MACOS_DEVELOPER_TEAM }}
+          MACOS_ALTOOL_APPPASSWD: ${{ secrets.MACOS_ALTOOL_APPPASSWD }}
+        run: |
+          mkdir -p release
+          hdiutil create -fs HFS+ -ov -format UDZO -srcfolder ./bin/mac/ -volname busydonkey release/busydonkey-mac-${{ steps.vars.outputs.tag }}.dmg
+          requestUUID=$(xcrun altool --notarize-app --primary-bundle-id "de.wlbr.busydonkey" --username "$MACOS_DEVELOPER_EMAIL" --password "$MACOS_ALTOOL_APPPASSWD" --asc-provider "$MACOS_DEVELOPER_TEAM"  --file release/busydonkey-mac-${{ steps.vars.outputs.tag }}.dmg 2>&1 | awk '/RequestUUID/ { print $NF; }')
+          if [[ $requestUUID == "" ]]; then  echo "could not upload for notarization" ; exit 1 ; fi
+          # wait for status to be not "in progress" any more
+          request_status="in progress"
+          while [[ "$request_status" == "in progress" ]]; do
+              echo -n "waiting... "
+              sleep 10
+              request_status=$(xcrun altool --notarization-info "$requestUUID" --username "$MACOS_DEVELOPER_EMAIL" --password "$MACOS_ALTOOL_APPPASSWD"  2>&1  | awk -F ': ' '/Status:/ { print $2; }' )
+              echo "$request_status"
+          done
+          stapler staple release/busydonkey-mac-${{ steps.vars.outputs.tag }}.dmg
+      - name: Buildrelease
+        if: startsWith(github.ref, 'refs/tags/')
+        run: make release
+      - name: Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            release/busydonkey-linux-${{ steps.vars.outputs.tag }}.tgz
+            release/busydonkey-mac-${{ steps.vars.outputs.tag }}.dmg
+            release/busydonkey-win-${{ steps.vars.outputs.tag }}.zip
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+
