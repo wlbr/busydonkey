@@ -34,7 +34,7 @@ type CommonConfig struct {
 
 func sleep(cfg *CommonConfig, timeout int) {
 	if timeout == -1 {
-		timeout = randomInt(10)
+		timeout = randomInt(10) + 1
 	}
 	verboseInfo(cfg, "Sleeping for %d seconds.\n", timeout)
 	time.Sleep(time.Duration(timeout) * time.Second)
@@ -123,7 +123,7 @@ func main() {
 
 	flag.BoolVar(&cfg.ShowVersion, "version", false, "Show version info.")
 	flag.BoolVar(&cfg.Verbose, "verbose", false, "Get debug info.")
-	flag.IntVar(&cfg.LoadDuration, "d", 120, "Duration of a load peak to be generated in seconds.  Use -1 for random duration.")
+	flag.IntVar(&cfg.LoadDuration, "d", -1, "Duration of a load peak to be generated in seconds.  Use -1 for random duration.")
 	flag.IntVar(&cfg.LoadRepetitions, "r", -1, "Number of times the peak will be repeated. Use -1 for random times.")
 	flag.IntVar(&cfg.LoadPause, "p", -1, "Fixed pause in seconds between the generated peaks. Use -1 for random amount.")
 	flag.IntVar(&cfg.LoadInitialTimeOut, "t", -1, "Fixed pause in seconds before the first peakt will be created. Use -1 for random amount.")
@@ -141,10 +141,10 @@ func main() {
 		}
 	}
 	if cfg.LoadDuration == -1 {
-		cfg.LoadDuration = randomInt(10) + 1
+		cfg.LoadDuration = randomInt(10) + 20
 	}
 	if cfg.LoadRepetitions == -1 {
-		cfg.LoadRepetitions = randomInt(2) + 1
+		cfg.LoadRepetitions = randomInt(5) + 2
 	}
 	if cfg.LoadInitialTimeOut == -1 {
 		cfg.LoadInitialTimeOut = randomInt(10) + 17
